@@ -9,53 +9,54 @@ async function main() {
         const selectedObjects = figma.currentPage.selection;
         if (selectedObjects.length === 0) figma.closePlugin('Selection is empty');
 
-        // 2. Получить константы стилей локальных или из либы
-        // TODO: надо находить константы из либы и переопределять константами локальными
-        let resultPaintStylesById = {};
-        let resultPaintStylesByName = {};
-
+        // 2. Получить константы стилей локальных + из либы
         const styles = await getStyles();
 
+        // Хэш с ключами — id стиля, нужен чтобы найти стиль по его id у текущего объекта
+        let stylesById = {};
+        // Хэш с ключами — name стиля, нужен чтобы найти пару к текущему стилю по новому имени name
+        let stylesByName = {};
+
         styles.forEach(style => {
-            resultPaintStylesById[style.id] = style;
-            resultPaintStylesByName[style.name] = style;
+            stylesById[style.id] = style;
+
+            // 2.1. Константы с одинаковым именем будут переопределены локальными
+            stylesByName[style.name] = style;
         });
 
-        // console.log('result styles by id', resultPaintStylesById);
-        console.log('result styles by name', resultPaintStylesByName);
-
-        // 3. Найти соответсвие id стиля объекта и самого стиля
+        // Обходим выбранные экраны
         for (const selectedObject of selectedObjects) {
-            // 3.1. Если у объекта нет детей, применяем стили и продолжаем цикл
-            if (selectedObject.findAll === undefined) continue;
-            
-            const themeDesc = selectedObject.name;
-            const themeDescParts = themeDesc.split('/');
-            const themeName = themeDescParts[1];
-            const themeSubtype = themeDescParts[2];
+            const themePath = selectedObject.name;
+            // Валидация themePath в названии экрана
+            if (!isValidThemePath(themePath)) {
+                const warnMsg = `Theme path is invalid: ${themePath}`;
+                console.warn(warnMsg);
+                figma.closePlugin(warnMsg);
+                return;
+            }
+            // Получаем компоненты themePath
+            const [themeTypes, themeName, themeVariant, themeConst] = parseThemePath(expandThemePath(themePath));
 
-            const children = [selectedObject, ...selectedObject.findAll(isPaintableObject)];
+            // Текущий объект не имеет детей, пропускаем
+            if (selectedObject.findAll === undefined) {
+                console.warn('Skip empty object', selectedObject);
+                continue;
+            }
 
-            for (let child of children) {
-                applyAltStyle(
-                    child, 
-                    'fills', 
-                    'fillStyleId', 
-                    themeName, 
-                    themeSubtype,
-                    resultPaintStylesById, 
-                    resultPaintStylesByName,
-                );
-
-                applyAltStyle(
-                    child, 
-                    'strokes', 
-                    'strokeStyleId', 
-                    themeName, 
-                    themeSubtype,
-                    resultPaintStylesById, 
-                    resultPaintStylesByName,
-                );
+            // Объодим все объекты, включая экран
+            const objects = [selectedObject, ...selectedObject.findAll()];
+            for (let object of objects) {
+                // Для каждого themeType, то есть для ColorTheme, EffectTheme, TextTheme
+                for (const themeType of themeTypes) {
+                    // Ищем стиль
+                    // TODO: проверять объект можно ли к нему применять стили
+                    const style = findStyle(themeType, themeName, themeVariant, themeConst, stylesById, stylesByName);
+                    // Применяем стиль
+                    const [errStyle, errObject] = themeTypeToFnMap[themeType](style, object);
+                    if (errStyle !== undefined && errObject !== undefined) {
+                        console.warn('Unknown style', errStyle, errObject);
+                    }
+                }
             }
         }
 
@@ -68,67 +69,105 @@ async function main() {
     }
 }
 
-// TODO: возвращать где-то unknown styles для дальнейшей обработки и отображение ошибок
+/******* Theme Path ********/
 
-const applyAltStyle = (
-    object, 
-    styleField, 
-    styleIdFieldName, 
-    themeName, 
-    themeSubtype, 
-    stylesById, 
-    stylesByName
-) => {
-    if (object[styleIdFieldName] === undefined) return;
-    // 3.2 Если у объекта нет константы стиля, но есть заливка, явно это подсвечиваем
-    if (object[styleIdFieldName] === '' && object[styleField].length > 0) {
-        const paint = {
-            type: 'SOLID',
-            color: {r: 1, g: 0, b: 1},
-        };
-        object[styleField] = [paint];
-        return;
-    }
-    // 3.3 Если у объекта нет константы и нет заливки, пропускаем
-    if (object[styleIdFieldName] === '') return;
-
-    // 4. Найти пару для этого стиля по day/night типу
-    const fillStyle = stylesById[object[styleIdFieldName]];
-    if (fillStyle === undefined) {
-        return;
-    }
-
-    const altFillStyleName = getAltStyleName(
-        kDefaultStyleNamePattern, 
-        fillStyle.name, 
-        themeName, 
-        themeSubtype,
-    );
-
-    const altFillStyle = stylesByName[altFillStyleName];
-
-    if (altFillStyle === undefined) {
-        figma.closePlugin(`Can't find themeSubtype of '${themeSubtype}'`);
-        return;
-    }
-
-    // 5. Заменить id стиля на id пары day/night
-    object[styleIdFieldName] = altFillStyle.id;
+const isValidThemePath = (themePath) => {
+    const themePathParts = themePath.split('/').map(elem => elem.trim()).filter(elem => elem !== '');
+    const length = themePathParts.length;
+    return length === 2 || length === 4;
 }
 
-const getAltStyleName = (pattern, styleName, themeName, themeSubtype) => {
-    const parts = pattern.split('/');
-    const newParts = styleName.split('/');
+const expandThemePath = (themePath) => {
+    const themePathParts = themePath.split('/').map(elem => elem.trim()).filter(elem => elem !== '');
+    const length = themePathParts.length;
 
-    const themeSubtypeIdx = parts.indexOf('themeSubtype');
-    if (themeSubtypeIdx < 0) figma.closePlugin(`Can\'t find themeSubtype of '${themeSubtype}'`);
-    newParts[themeSubtypeIdx] = themeSubtype;
+    // 2 элемента в themePath, например Pro/Day
+    if (length == 2) {
+        const [themeName, themeVariant] = themePathParts;
+        return `ColorTheme,EffectTheme,TextTheme/${themeName}/${themeVariant}/*`;
+    }
+    
+    // 4 элемента в themePath, например */Pro/Day/*
+    const [themeTypes, themeName, themeVariant, themeConst] = themePathParts;
 
-    const themeNameIdx = parts.indexOf('themeName');
-    if (themeNameIdx < 0) figma.closePlugin(`Cant't find themeName of '${themeName}'`);
-    newParts[themeNameIdx] = themeName;
+    // Раскрываем * для themeTypes
+    if (themeTypes === '*') {
+        return `ColorTheme,EffectTheme,TextTheme/${themeName}/${themeVariant}/${themeConst}`
+    }
+    
+    // Раскрывать нечего, возвращаем оригинал
+    return themePath;
+}
 
-    return newParts.join('/');
+const parseThemePath = (themePath) => {
+    const themePathParts = themePath.split('/').map(elem => elem.trim()).filter(elem => elem !== '');
+    const [themeTypes, themeName, themeVariant, themeConst] = themePathParts;
+    const themeTypesParts = themeTypes.split(',').map(elem => elem.trim()).filter(elem => elem !== '');
+    return [themeTypesParts, themeName, themeVariant, themeConst];
+}
+
+/******* Object ********/
+
+const isPaintableObject = (object) => 
+    object.fillStyleId !== undefined
+    && object.strokeStyleId !== undefined
+    && object.effectStyleId !== undefined;
+
+const isTextObject = (object) => 
+    object.fillStyleId !== undefined
+    && object.strokeStyleId !== undefined
+    && object.effectStyleId !== undefined
+    && object.textStyleId !== undefined;
+
+/******* Styles ********/
+
+const findStyle = (
+    themeType,
+    themeName, 
+    themeVariant, 
+    themeConst, 
+    stylesById, 
+    stylesByName,
+    object,
+) => {
+    const themeTypeToStyleField = {
+        ColorTheme: ''
+    }
+    // Подходит любая константа у текущего объекта
+    if (themeConst === '*') {
+        const objectStyle = object.fillStyleId
+    }
+}
+
+const applyColorTheme = (style, object) => {
+    if (style === undefined || object === undefined) return [null, null];
+    // Есть рандомный fill и нет стиля, возвращаем с ошибкой
+    if (object.fills.length > 0 && object.fillStyleId === '') return [style, object]; 
+    // У объекта нет fill и нет стиля, пропускаем
+    if (object.fills.length === 0 && object.fillStyleId === '') return [];
+    // Применяем заливку
+    object.fillStyleId = style.id;
+
+    // Есть рандомная stroke и нет стиля, возвращаем с ошибкой
+    if (object.strokes.length > 0 && object.strokeStyleId === '') return [style, object]; 
+    // У объекта нет рандомной заливки и нет стиля, пропускаем
+    if (object.strokes.length === 0 && object.strokeStyleId === '') return [];
+    // Применяем stroke
+    object.strokeStyleId = style.id;
+
+    return [];
+}
+
+// TODO: Unimplemented
+const applyEffectTheme = (style, object) => [];
+//
+// TODO: Unimplemented
+const applyTextTheme = (style, object) => [];
+
+const themeTypeToFnMap = {
+    ColorTheme: applyColorTheme,
+    EffectTheme: applyEffectTheme,
+    TextTheme: applyTextTheme,
 }
 
 // При синхронизации стили каждого документа (либы) сохраняются в соответствующем пространстве имен, 
@@ -164,19 +203,5 @@ const syncStyleKeys = async () => {
     await figma
         .clientStorage.setAsync(kStylesStorageKey, paintStyleKeys);
 }
-
-const isValidThemePath = (themePathPattern, themePath) => 
-    themePathPattern.split('/').length === themePath.split('/').length;
-
-const isPaintableObject = (object) => 
-    object.fillStyleId !== undefined
-    && object.strokeStyleId !== undefined
-    && object.effectStyleId !== undefined;
-
-const isTextObject = (object) => 
-    object.fillStyleId !== undefined
-    && object.strokeStyleId !== undefined
-    && object.effectStyleId !== undefined
-    && object.textStyleId !== undefined;
 
 main();
