@@ -1,0 +1,12 @@
+{
+  "name": "YG Theme Gen",
+  "id": "914464061867139176",
+  "api": "1.0.0",
+  "main": "code.js",
+  "enablePrivatePluginApi": true,
+  "menu": [
+    {"name": "Apply theme", "command": "applyTheme"},
+    {"separator": true},
+    {"name": "Sync styles", "command": "syncStyles"}
+  ]
+}
