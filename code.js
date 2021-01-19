@@ -22,7 +22,7 @@ async function main() {
 
         // 1. Получить список объектов для перекраски
         const selectedObjects = figma.currentPage.selection;
-        if (selectedObjects.length === 0) figma.closePlugin('Selection is empty');
+        if (selectedObjects.length === 0) figma.closePlugin('🌔 Selection is empty');
 
         // 2. Получить константы стилей локальных + из либы
         const styles = await restoreStyles();
@@ -40,12 +40,14 @@ async function main() {
             stylesByName[style.name] = style;
         });
 
+        console.log(stylesByName)
+
         // Обходим выбранные экраны
         for (const selectedObject of selectedObjects) {
             const themePath = selectedObject.name;
             // Валидация themePath в названии экрана
             if (!validateThemePath(themePath)) {
-                const warnMsg = `Theme path is invalid: ${themePath}`;
+                const warnMsg = `🌕 Theme path is invalid: ${themePath}`;
                 console.warn(warnMsg);
                 figma.closePlugin(warnMsg);
                 return;
@@ -138,6 +140,43 @@ async function main() {
                             pushError(plainColorErrors, object, `Plain <b>stroke</b> color used for object <b>${object.name}</b>`);
                         }
                     } else if (themeType === 'EffectTheme') {
+                        // Пропускаем если объект не предназначен для отрисовки на канвасе
+                        if (!isPaintableObject(object)) break;
+
+                        var { isPlainEffect, shouldSkip } = validateEffectForColorTheme(object);
+                        if (!shouldSkip) {
+                            const objectStyle = stylesById[object.effectStyleId];
+                            
+                            // Бывает отваливаются константы у фигмы, effectStyleId остался у object, но не попал в stylesById, поэтому нужна такая проверка
+                            if (objectStyle === undefined) {
+                                pushError(unknownThemeErrors, object, `Unknown <b>effectStyleId</b> for object <b>${object.name}</b>. Probably imported form deleted library`);
+                                continue;
+                            }
+
+                            const isValidThemePath = validateThemePath(objectStyle.name);
+                            if (isValidThemePath) {
+                                const [objThemeType, objThemeName, objThemeVariant, objThemeConst] = parseThemePath(objectStyle.name);
+                                const altObjectStyleThemePath = `${themeType}/${themeName}/${themeVariant}/${objThemeConst}`;
+                                const altStyle = stylesByName[altObjectStyleThemePath];
+
+                                if (altStyle === undefined) {
+                                    pushError(unknownThemeErrors, object, `Unknown theme <b>${altObjectStyleThemePath}</b> for object <b>${object.name}</b>`);
+                                } else {
+                                    // Применяем стиль 
+                                    if (themeConst === '*') {
+                                        object.effectStyleId = altStyle.id;
+                                    } else if (themeConst === objThemeConst) {
+                                        object.effectStyleId = altStyle.id;
+                                    } else {
+                                        pushError(ignoringThemeConstErrors, object, `Unknown theme const <b>${themeCons}</b> for object <b>${object.name}</b>`);
+                                    }
+                                }
+                            } else {
+                                pushError(unknownThemeErrors, object, `Skipping theme <b>${objectStyle.name}</b> for object <b>${object.name}</b>`, 'warning');
+                            }
+                        } else if (isPlainColor) {
+                            pushError(plainColorErrors, object, `Plain <b>effect</b> used for object <b>${object.name}</b>`);
+                        }
                     } else if (themeType === 'TextTheme') {
                     } else {
                         pushError(unknownThemeErrors, object, `Unknown themeType <b>${themeType}</b> for themePath <b>${themePath}</b>`);
@@ -151,7 +190,7 @@ async function main() {
 
     if (figma.command === kCommandSyncStyles) {
         await storeStyles();
-        figma.closePlugin("Styles updated.");
+        figma.closePlugin("🌘 Styles updated.");
     }
 }
 
@@ -234,6 +273,20 @@ const validateStrokeForColorTheme = (object) => {
     return result;
 }
 
+const validateEffectForColorTheme = (object) => {
+    let result = {isPlainEffect: false, shouldSkip: false};
+
+    // Есть рандомный effect и нет стиля, возвращаем с ошибкой
+    if (object.effects.length > 0 && object.effectStyleId === '') {
+        result.isPlainEffect = true; 
+        result.shouldSkip = true; 
+    }
+    // У объекта нет stroke и нет стиля, пропускаем
+    if (object.effects.length === 0 && object.effectStyleId === '') result.shouldSkip = true;
+
+    return result;
+}
+
 /******* Storage ********/
 
 const restoreStyles = async () => {
@@ -248,18 +301,21 @@ const restoreStyles = async () => {
         } catch (e) {}
     }
 
-    return [...styles, ...figma.getLocalPaintStyles()];
+    return [...styles, ...figma.getLocalPaintStyles(), ...figma.getLocalEffectStyles()];
 }
 
 const storeStyles = async () => {
     const paintStyleKeys = figma.getLocalPaintStyles()
-        .map((style) => style.key);
+        .map(style => style.key);
+
+    const effectStyleKeys = figma.getLocalEffectStyles()
+        .map(style => style.key);
 
     // Удаляем предыдущие стили
     await figma.clientStorage.setAsync(kStylesStorageKey, null);
 
     await figma
-        .clientStorage.setAsync(kStylesStorageKey, paintStyleKeys);
+        .clientStorage.setAsync(kStylesStorageKey, [...paintStyleKeys, ...effectStyleKeys]);
 }
 
 /******** Debug ********/
