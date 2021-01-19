@@ -10,9 +10,10 @@ async function main() {
         if (selectedObjects.length === 0) figma.closePlugin('Selection is empty');
 
         // 2. Получить константы стилей локальных + из либы
-        const styles = await getStyles();
+        const styles = await restoreStyles();
 
         // Хэш с ключами — id стиля, нужен чтобы найти стиль по его id у текущего объекта
+        // TODO: stylesById нужны только чтобы получить имя, можно сразу сохранять хэш с соответсвием id и name
         let stylesById = {};
         // Хэш с ключами — name стиля, нужен чтобы найти пару к текущему стилю по новому имени name
         let stylesByName = {};
@@ -28,7 +29,7 @@ async function main() {
         for (const selectedObject of selectedObjects) {
             const themePath = selectedObject.name;
             // Валидация themePath в названии экрана
-            if (!isValidThemePath(themePath)) {
+            if (!validateThemePath(themePath)) {
                 const warnMsg = `Theme path is invalid: ${themePath}`;
                 console.warn(warnMsg);
                 figma.closePlugin(warnMsg);
@@ -39,7 +40,7 @@ async function main() {
 
             // Текущий объект не имеет детей, пропускаем
             if (selectedObject.findAll === undefined) {
-                console.warn('Skip empty object', selectedObject);
+                console.warn('[Main] Skip empty object', selectedObject);
                 continue;
             }
 
@@ -48,13 +49,70 @@ async function main() {
             for (let object of objects) {
                 // Для каждого themeType, то есть для ColorTheme, EffectTheme, TextTheme
                 for (const themeType of themeTypes) {
-                    // Ищем стиль
-                    // TODO: проверять объект можно ли к нему применять стили
-                    const style = findStyle(themeType, themeName, themeVariant, themeConst, stylesById, stylesByName);
-                    // Применяем стиль
-                    const [errStyle, errObject] = themeTypeToFnMap[themeType](style, object);
-                    if (errStyle !== undefined && errObject !== undefined) {
-                        console.warn('Unknown style', errStyle, errObject);
+                    if (themeType === 'ColorTheme') {
+                        // Пропускаем если объект не предназначен для отрисовки на канвасе
+                        if (!isPaintableObject(object)) break;
+
+                        // TODO: разобрать на отдельные случаи: к объекту не надо применять стиль, у объекта рандомный цвет, у объекта неверный themePath
+                        const [isValidFill, isValidStroke] = validateObjectForColorTheme(object);
+
+                        if (isValidFill) {
+                            const objectStyle = stylesById[object.fillStyleId];
+                            const isValidThemePath = validateThemePath(objectStyle.name);
+                            if (isValidThemePath) {
+                                const [objThemeType, objThemeName, objThemeVariant, objThemeConst] = parseThemePath(objectStyle.name);
+                                const altObjectStyleThemePath = `${themeType}/${themeName}/${themeVariant}/${objThemeConst}`;
+                                const altStyle = stylesByName[altObjectStyleThemePath];
+
+                                if (altStyle === undefined) {
+                                    console.warn(`[ColorTheme/Fill] Object '${object.name}', unknown theme: '${altObjectStyleThemePath}'`);
+                                } else {
+                                    // Применяем стиль 
+                                    if (themeConst === '*') {
+                                        object.fillStyleId = altStyle.id;
+                                    } else if (themeConst === objThemeConst) {
+                                        object.fillStyleId = altStyle.id;
+                                    } else {
+                                        console.warn(`[ColorTheme/Fill] Object '${object.name}', ignoring theme const: '${objThemeConst}'`);
+                                    }
+                                }
+                            } else {
+                                console.warn(`[ColorTheme/Fill] Object '${object.name}', unknown theme: '${objectStyle.name}'`);
+                            }
+                        } else {
+                            console.warn(`[ColorTheme/Fill] Object '${object.name}' is using plain fill color`);
+                        }
+
+                        if (isValidStroke) {
+                            const objectStyle = stylesById[object.strokeStyleId];
+                            const isValidThemePath = validateThemePath(objectStyle.name);
+                            if (isValidThemePath) {
+                                const [objThemeType, objThemeName, objThemeVariant, objThemeConst] = parseThemePath(objectStyle.name);
+                                console.log(`[ColorTheme/Stroke] ${object.name}, ${objectStyle.name}`);
+                                const altObjectStyleThemePath = `${themeType}/${themeName}/${themeVariant}/${objThemeConst}`;
+                                const altStyle = stylesByName[altObjectStyleThemePath];
+
+                                if (altStyle === undefined) {
+                                    console.warn(`[ColorTheme/Stroke] Object '${object.name}', unknown theme: '${altObjectStyleThemePath}'`);
+                                } else {
+                                    // Применяем стиль
+                                    if (themeConst === '*') {
+                                        object.strokeStyleId = altStyle.id;
+                                    } else if (themeConst === objThemeConst) {
+                                        object.strokeStyleId = altStyle.id;
+                                    } else {
+                                        console.warn(`[ColorTheme/Stroke] Object '${object.name}', ignoring theme const: '${objThemeConst}'`);
+                                    }
+                                }
+                            } else {
+                                console.warn(`[ColorTheme/Stroke] Object '${object.name}', unknown theme: '${objectStyle.name}'`);
+                            }
+                        } else {
+                            console.warn(`[ColorTheme/Stroke] Object '${object.name}' is using plain stroke color`);
+                        }
+                    } else {
+                        console.warn(`[Main] Unknown theme type: '${themeType}' in theme path '${themePath}'`);
+                        // figma.closePlugin('Theme not applied, see log for erros.');
                     }
                 }
             }
@@ -64,14 +122,14 @@ async function main() {
     }
 
     if (figma.command === kCommandSyncStyles) {
-        await syncStyleKeys();
+        await storeStyles();
         figma.closePlugin("Styles updated.");
     }
 }
 
 /******* Theme Path ********/
 
-const isValidThemePath = (themePath) => {
+const validateThemePath = (themePath) => {
     const themePathParts = themePath.split('/').map(elem => elem.trim()).filter(elem => elem !== '');
     const length = themePathParts.length;
     return length === 2 || length === 4;
@@ -80,11 +138,12 @@ const isValidThemePath = (themePath) => {
 const expandThemePath = (themePath) => {
     const themePathParts = themePath.split('/').map(elem => elem.trim()).filter(elem => elem !== '');
     const length = themePathParts.length;
+    const expandedThemeType = 'ColorTheme,EffectTheme,TextTheme'
 
     // 2 элемента в themePath, например Pro/Day
     if (length == 2) {
         const [themeName, themeVariant] = themePathParts;
-        return `ColorTheme,EffectTheme,TextTheme/${themeName}/${themeVariant}/*`;
+        return `${expandedThemeType}/${themeName}/${themeVariant}/*`;
     }
     
     // 4 элемента в themePath, например */Pro/Day/*
@@ -92,7 +151,7 @@ const expandThemePath = (themePath) => {
 
     // Раскрываем * для themeTypes
     if (themeTypes === '*') {
-        return `ColorTheme,EffectTheme,TextTheme/${themeName}/${themeVariant}/${themeConst}`
+        return `${expandedThemeType}/${themeName}/${themeVariant}/${themeConst}`
     }
     
     // Раскрывать нечего, возвращаем оригинал
@@ -114,70 +173,31 @@ const isPaintableObject = (object) =>
     && object.effectStyleId !== undefined;
 
 const isTextObject = (object) => 
-    object.fillStyleId !== undefined
-    && object.strokeStyleId !== undefined
-    && object.effectStyleId !== undefined
+    isPaintableObject(object)
     && object.textStyleId !== undefined;
 
 /******* Styles ********/
 
-const findStyle = (
-    themeType,
-    themeName, 
-    themeVariant, 
-    themeConst, 
-    stylesById, 
-    stylesByName,
-    object,
-) => {
-    const themeTypeToStyleField = {
-        ColorTheme: ''
-    }
-    // Подходит любая константа у текущего объекта
-    if (themeConst === '*') {
-        const objectStyle = object.fillStyleId
-    }
-}
+// TODO: Убрать повторение
+const validateObjectForColorTheme = (object) => {
+    let result = [true, true];
 
-const applyColorTheme = (style, object) => {
-    if (style === undefined || object === undefined) return [null, null];
     // Есть рандомный fill и нет стиля, возвращаем с ошибкой
-    if (object.fills.length > 0 && object.fillStyleId === '') return [style, object]; 
+    if (object.fills.length > 0 && object.fillStyleId === '') result[0] = false; 
     // У объекта нет fill и нет стиля, пропускаем
-    if (object.fills.length === 0 && object.fillStyleId === '') return [];
-    // Применяем заливку
-    object.fillStyleId = style.id;
+    if (object.fills.length === 0 && object.fillStyleId === '') result[0] = false;
+    
+    // Есть рандомный fill и нет стиля, возвращаем с ошибкой
+    if (object.strokes.length > 0 && object.strokeStyleId === '') result[1] = false; 
+    // У объекта нет fill и нет стиля, пропускаем
+    if (object.strokes.length === 0 && object.strokeStyleId === '') result[1] = false;
 
-    // Есть рандомная stroke и нет стиля, возвращаем с ошибкой
-    if (object.strokes.length > 0 && object.strokeStyleId === '') return [style, object]; 
-    // У объекта нет рандомной заливки и нет стиля, пропускаем
-    if (object.strokes.length === 0 && object.strokeStyleId === '') return [];
-    // Применяем stroke
-    object.strokeStyleId = style.id;
-
-    return [];
+    return result;
 }
 
-// TODO: Unimplemented
-const applyEffectTheme = (style, object) => [];
-//
-// TODO: Unimplemented
-const applyTextTheme = (style, object) => [];
+/******* Storage ********/
 
-const themeTypeToFnMap = {
-    ColorTheme: applyColorTheme,
-    EffectTheme: applyEffectTheme,
-    TextTheme: applyTextTheme,
-}
-
-// При синхронизации стили каждого документа (либы) сохраняются в соответствующем пространстве имен, 
-// чтобы стили файлов при совпадении имен констант не оверрайдились
-//
-// TODO: Как понять из какого документа (пространства имен) надо брать стиль? 
-// Автоматически нельзя понять название документа. 
-// - Или при синхронизации перезаписывать все стили (current)
-// - Или его надо хранить в названии константы
-const getStyles = async () => {
+const restoreStyles = async () => {
     const styleKeys = await figma
         .clientStorage.getAsync(kStylesStorageKey);
 
@@ -192,14 +212,13 @@ const getStyles = async () => {
     return [...styles, ...figma.getLocalPaintStyles()];
 }
 
-// TODO: Кэшировать после синхронизации
-// TODO: Идея где можно ускориться: возможно если сделать сразу ui plugin, он не будет удаляться посде отработки, 
-// а значит закешированые значения не будут перезапрашиваться из storage
-const syncStyleKeys = async () => {
+const storeStyles = async () => {
     const paintStyleKeys = figma.getLocalPaintStyles()
         .map((style) => style.key);
 
+    // Удаляем предыдущие стили
     await figma.clientStorage.setAsync(kStylesStorageKey, null);
+
     await figma
         .clientStorage.setAsync(kStylesStorageKey, paintStyleKeys);
 }
