@@ -1,9 +1,9 @@
 {
-  "name": "YG Theme Gen",
+  "name": "🌘  Presence",
   "id": "914464061867139176",
   "api": "1.0.0",
   "main": "code.js",
-  "enablePrivatePluginApi": true,
+  "ui": "ui.html",
   "menu": [
     {"name": "Apply theme", "command": "applyTheme"},
     {"separator": true},

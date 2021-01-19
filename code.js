@@ -3,8 +3,23 @@ const kCommandSyncStyles = 'syncStyles';
 const kStylesStorageKey = `yg_styles_key`;
 const kDefaultStyleNamePattern = 'rootName/themeName/themeSubtype/constName'
 
+figma.ui.onmessage = msg => {
+    if (msg.type === 'debugger') {
+        const node = figma.getNodeById(msg.id);
+        figma.currentPage.selection = [node]
+        figma.viewport.scrollAndZoomIntoView([node]);
+    }
+}
+
 async function main() {
+    figma.showUI(__html__);
+
     if (figma.command === kCommandApplyTheme) {
+        // Messages
+        let unknownThemeErrors = [];
+        let ignoringThemeConstErrors = [];
+        let plainColorErrors = [];
+
         // 1. Получить список объектов для перекраски
         const selectedObjects = figma.currentPage.selection;
         if (selectedObjects.length === 0) figma.closePlugin('Selection is empty');
@@ -53,11 +68,16 @@ async function main() {
                         // Пропускаем если объект не предназначен для отрисовки на канвасе
                         if (!isPaintableObject(object)) break;
 
-                        // TODO: разобрать на отдельные случаи: к объекту не надо применять стиль, у объекта рандомный цвет, у объекта неверный themePath
-                        const [isValidFill, isValidStroke] = validateObjectForColorTheme(object);
-
-                        if (isValidFill) {
+                        var { isPlainColor, shouldSkip } = validateFillForColorTheme(object);
+                        if (!shouldSkip) {
                             const objectStyle = stylesById[object.fillStyleId];
+                            
+                            // Бывает отваливаются константы у фигмы, fillStyleId остался у object, но не попал в stylesById, поэтому нужна такая проверка
+                            if (objectStyle === undefined) {
+                                pushError(unknownThemeErrors, object, `Unknown <b>fillStyleId</b> for object <b>${object.name}</b>. Probably imported form deleted library`);
+                                continue;
+                            }
+
                             const isValidThemePath = validateThemePath(objectStyle.name);
                             if (isValidThemePath) {
                                 const [objThemeType, objThemeName, objThemeVariant, objThemeConst] = parseThemePath(objectStyle.name);
@@ -65,7 +85,7 @@ async function main() {
                                 const altStyle = stylesByName[altObjectStyleThemePath];
 
                                 if (altStyle === undefined) {
-                                    console.warn(`[ColorTheme/Fill] Object '${object.name}', unknown theme: '${altObjectStyleThemePath}'`);
+                                    pushError(unknownThemeErrors, object, `Unknown theme <b>${altObjectStyleThemePath}</b> for object <b>${object.name}</b>`);
                                 } else {
                                     // Применяем стиль 
                                     if (themeConst === '*') {
@@ -73,27 +93,34 @@ async function main() {
                                     } else if (themeConst === objThemeConst) {
                                         object.fillStyleId = altStyle.id;
                                     } else {
-                                        console.warn(`[ColorTheme/Fill] Object '${object.name}', ignoring theme const: '${objThemeConst}'`);
+                                        pushError(ignoringThemeConstErrors, object, `Unknown theme const <b>${themeCons}</b> for object <b>${object.name}</b>`);
                                     }
                                 }
                             } else {
-                                console.warn(`[ColorTheme/Fill] Object '${object.name}', unknown theme: '${objectStyle.name}'`);
+                                pushError(unknownThemeErrors, object, `Skipping theme <b>${objectStyle.name}</b> for object <b>${object.name}</b>`, 'warning');
                             }
-                        } else {
-                            console.warn(`[ColorTheme/Fill] Object '${object.name}' is using plain fill color`);
+                        } else if (isPlainColor) {
+                            pushError(plainColorErrors, object, `Plain <b>fill</b> color used for object <b>${object.name}</b>`);
                         }
 
-                        if (isValidStroke) {
+                        var { isPlainColor, shouldSkip } = validateStrokeForColorTheme(object);
+                        if (!shouldSkip) {
                             const objectStyle = stylesById[object.strokeStyleId];
+                            
+                            // Бывает отваливаются константы у фигмы, strokeStyleId остался у object, но не попал в stylesById, поэтому нужна такая проверка
+                            if (objectStyle === undefined) {
+                                pushError(unknownThemeErrors, object, `Unknown <b>strokeStyleId</b> for object <b>${object.name}</b>. Probably imported form old library`);
+                                continue;
+                            }
+
                             const isValidThemePath = validateThemePath(objectStyle.name);
                             if (isValidThemePath) {
                                 const [objThemeType, objThemeName, objThemeVariant, objThemeConst] = parseThemePath(objectStyle.name);
-                                console.log(`[ColorTheme/Stroke] ${object.name}, ${objectStyle.name}`);
                                 const altObjectStyleThemePath = `${themeType}/${themeName}/${themeVariant}/${objThemeConst}`;
                                 const altStyle = stylesByName[altObjectStyleThemePath];
 
                                 if (altStyle === undefined) {
-                                    console.warn(`[ColorTheme/Stroke] Object '${object.name}', unknown theme: '${altObjectStyleThemePath}'`);
+                                    pushError(unknownThemeErrors, object, `Unknown theme <b>${altObjectStyleThemePath}</b> for object <b>${object.name}</b>`);
                                 } else {
                                     // Применяем стиль
                                     if (themeConst === '*') {
@@ -101,24 +128,25 @@ async function main() {
                                     } else if (themeConst === objThemeConst) {
                                         object.strokeStyleId = altStyle.id;
                                     } else {
-                                        console.warn(`[ColorTheme/Stroke] Object '${object.name}', ignoring theme const: '${objThemeConst}'`);
+                                        pushError(ignoringThemeConstErrors, object, `Unknown theme const <b>${themeCons}</b> for object <b>${object.name}</b>`);
                                     }
                                 }
                             } else {
-                                console.warn(`[ColorTheme/Stroke] Object '${object.name}', unknown theme: '${objectStyle.name}'`);
+                                pushError(unknownThemeErrors, object, `Skipping theme <b>${objectStyle.name}</b> for object <b>${object.name}</b>`, 'warning');
                             }
-                        } else {
-                            console.warn(`[ColorTheme/Stroke] Object '${object.name}' is using plain stroke color`);
+                        } else if (isPlainColor) {
+                            pushError(plainColorErrors, object, `Plain <b>stroke</b> color used for object <b>${object.name}</b>`);
                         }
+                    } else if (themeType === 'EffectTheme') {
+                    } else if (themeType === 'TextTheme') {
                     } else {
-                        console.warn(`[Main] Unknown theme type: '${themeType}' in theme path '${themePath}'`);
-                        // figma.closePlugin('Theme not applied, see log for erros.');
+                        pushError(unknownThemeErrors, object, `Unknown themeType <b>${themeType}</b> for themePath <b>${themePath}</b>`);
                     }
                 }
             }
         }
 
-        figma.closePlugin('Theme applied!');
+        figma.ui.postMessage([...unknownThemeErrors, ...ignoringThemeConstErrors, ...plainColorErrors]);
     }
 
     if (figma.command === kCommandSyncStyles) {
@@ -178,19 +206,30 @@ const isTextObject = (object) =>
 
 /******* Styles ********/
 
-// TODO: Убрать повторение
-const validateObjectForColorTheme = (object) => {
-    let result = [true, true];
+const validateFillForColorTheme = (object) => {
+    let result = {isPlainColor: false, shouldSkip: false};
 
     // Есть рандомный fill и нет стиля, возвращаем с ошибкой
-    if (object.fills.length > 0 && object.fillStyleId === '') result[0] = false; 
+    if (object.fills.length > 0 && object.fillStyleId === '') {
+        result.isPlainColor = true; 
+        result.shouldSkip = true; 
+    }
     // У объекта нет fill и нет стиля, пропускаем
-    if (object.fills.length === 0 && object.fillStyleId === '') result[0] = false;
+    if (object.fills.length === 0 && object.fillStyleId === '') result.shouldSkip = true;
     
-    // Есть рандомный fill и нет стиля, возвращаем с ошибкой
-    if (object.strokes.length > 0 && object.strokeStyleId === '') result[1] = false; 
-    // У объекта нет fill и нет стиля, пропускаем
-    if (object.strokes.length === 0 && object.strokeStyleId === '') result[1] = false;
+    return result;
+}
+
+const validateStrokeForColorTheme = (object) => {
+    let result = {isPlainColor: false, shouldSkip: false};
+
+    // Есть рандомный stroke и нет стиля, возвращаем с ошибкой
+    if (object.strokes.length > 0 && object.strokeStyleId === '') {
+        result.isPlainColor = true; 
+        result.shouldSkip = true; 
+    }
+    // У объекта нет stroke и нет стиля, пропускаем
+    if (object.strokes.length === 0 && object.strokeStyleId === '') result.shouldSkip = true;
 
     return result;
 }
@@ -221,6 +260,12 @@ const storeStyles = async () => {
 
     await figma
         .clientStorage.setAsync(kStylesStorageKey, paintStyleKeys);
+}
+
+/******** Debug ********/
+
+const pushError = (errors, object, descr, type = 'error') => {
+    errors.push({object: object, descr: descr, type: type});
 }
 
 main();

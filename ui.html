@@ -1,0 +1,123 @@
+<div id='Debugger'>
+    <div class='Debugger-Item Debugger-Item_NoIcon'>Linting...</div>
+</div>
+
+<style>
+    /* Global */
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        position: relative;
+        box-sizing: border-box;
+        font-family: 'Inter', sans-serif;
+        font-size: 11px;
+        color: #333333;
+        margin: 0;
+        padding: 0;
+    }
+
+    /*  FONTS */
+    @font-face {
+        font-family: 'Inter';
+        font-weight: 400;
+        font-style: normal;
+        src: url('https://rsms.me/inter/font-files/Inter-Regular.woff2?v=3.7') format('woff2'),
+        url('https://rsms.me/inter/font-files/Inter-Regular.woff?v=3.7') format('woff');
+    }
+
+    @font-face {
+        font-family: 'Inter';
+        font-weight: 500;
+        font-style: normal;
+        src: url('https://rsms.me/inter/font-files/Inter-Medium.woff2?v=3.7') format('woff2'),
+        url('https://rsms.me/inter/font-files/Inter-Medium.woff2?v=3.7') format('woff');
+    }
+
+    @font-face {
+        font-family: 'Inter';
+        font-weight: 600;
+        font-style: normal;
+        src: url('https://rsms.me/inter/font-files/Inter-SemiBold.woff2?v=3.7') format('woff2'),
+        url('https://rsms.me/inter/font-files/Inter-SemiBold.woff2?v=3.7') format('woff');
+    }
+
+    .Debugger-Item {
+        display: flex;
+        align-items: center;
+        cursor: default;
+        padding: 0 8px 0 2px;
+        min-height: 32px;
+        user-select: none;
+    }
+    .Debugger-Item_NoIcon {
+        padding: 0 8px 0 12px;
+    }
+    .Debugger-Item_NoIcon .Icon {
+        display: none;
+    }
+    .Debugger-Item:hover {
+        background-color: rgba(0, 0, 0, 0.06);
+    }
+    .Debugger-Item:focus {
+        background-color: #daebf7!important;
+        outline: none;
+    }
+    .Debugger-ItemTitle {
+        padding: 8px 0;
+    }
+
+    .Icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: default;
+        min-width: 32px;
+        min-height: 32px;
+        user-select: none;
+    }
+
+    /* Icons */
+    .Icon-Warning {
+        background-color: #333;
+        -webkit-mask-image: url('data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIHdpZHRoPSIzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Im0xNiA5IDggMTRoLTE2em0tMSA4LjV2LTMuNWgydjMuNXptMCAxLjV2Mmgydi0yeiIgZmlsbD0iIzAwMCIgZmlsbC1ydWxlPSJldmVub2RkIi8+PC9zdmc+');
+        mask-image: url('data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIHdpZHRoPSIzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Im0xNiA5IDggMTRoLTE2em0tMSA4LjV2LTMuNWgydjMuNXptMCAxLjV2Mmgydi0yeiIgZmlsbD0iIzAwMCIgZmlsbC1ydWxlPSJldmVub2RkIi8+PC9zdmc+');
+    }
+
+    .Icon-ResolveFilled {
+        background-color: #333;
+        -webkit-mask-image: url('data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIHdpZHRoPSIzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Im0xNiAyMy45OTk5YzQuNDE4MyAwIDgtMy41ODE3IDgtOHMtMy41ODE3LTguMDAwMDItOC04LjAwMDAyLTggMy41ODE3Mi04IDguMDAwMDIgMy41ODE3IDggOCA4em0zLjkxMTEtOS42MzQ1LS44MjIyLS43MzA4LTMuNjEyNSA0LjA2MzktMi41ODc1LTIuNTg3NC0uNzc3OC43Nzc4IDMuNDEyNSAzLjQxMjN6IiBmaWxsPSIjMDAwIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiLz48L3N2Zz4=');
+        mask-image: url('data:image/svg+xml;base64,PHN2ZyBmaWxsPSJub25lIiBoZWlnaHQ9IjMyIiB2aWV3Qm94PSIwIDAgMzIgMzIiIHdpZHRoPSIzMiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Im0xNiAyMy45OTk5YzQuNDE4MyAwIDgtMy41ODE3IDgtOHMtMy41ODE3LTguMDAwMDItOC04LjAwMDAyLTggMy41ODE3Mi04IDguMDAwMDIgMy41ODE3IDggOCA4em0zLjkxMTEtOS42MzQ1LS44MjIyLS43MzA4LTMuNjEyNSA0LjA2MzktMi41ODc1LTIuNTg3NC0uNzc3OC43Nzc4IDMuNDEyNSAzLjQxMjN6IiBmaWxsPSIjMDAwIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiLz48L3N2Zz4=');
+    }
+</style>
+
+<script>
+// Components
+
+function DebuggerItem(title, object, iconName) {
+    const noIcon = iconName == undefined;
+    const debuggerItemClassName = `Debugger-Item ${noIcon ? 'Debugger-Item_NoIcon' : ''}`
+    const iconClassName = `Icon Icon-${iconName}`;
+    const onClick = object ? `onclick={onDebuggerItemPress('${JSON.stringify(object)}')}` : '';
+    return `<div class='${debuggerItemClassName}' ${onClick} tabindex='-1'><div class='${iconClassName}'></div><div class='Debugger-ItemTitle'>${title}</div></div>`
+}
+
+function onDebuggerItemPress(id) {
+    parent.postMessage({pluginMessage: {type: 'debugger', id: JSON.parse(id)}}, '*');
+}
+
+// Message from plugin
+onmessage = (event) => {
+    const Debugger = document.getElementById('Debugger');
+
+    const data = event.data.pluginMessage;
+
+    const htmlstr = data.length > 0
+        ? data.map(e => DebuggerItem(e.descr, e.object.id, e.type === 'warning' ? null : 'Warning'))
+            .reduce((acc, e) => acc + e)
+        : DebuggerItem('All good', null, 'ResolveFilled');
+    
+    Debugger.innerHTML = htmlstr;
+}
+</script>
