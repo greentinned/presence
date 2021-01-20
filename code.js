@@ -54,6 +54,7 @@ async function main() {
             }
             // Получаем компоненты themePath
             const [themeTypes, themeName, themeVariant, themeConst] = parseThemePath(expandThemePath(themePath));
+            console.log(themeTypes, themeName, themeVariant, themeConst)
 
             // Текущий объект не имеет детей, пропускаем
             if (selectedObject.findAll === undefined) {
@@ -82,6 +83,9 @@ async function main() {
 
                             const isValidThemePath = validateThemePath(objectStyle.name);
                             if (isValidThemePath) {
+                                // TODO: кажется parseThemePath нужна возможность сравнения с шаблоном (themePath экрана)
+                                // будет возвращать скомпилированный из кусков путь, например
+                                // ColorTheme/*/Day/* + ColorTheme/Pro/Day/* (путь из имени константы) = ColorTheme/Pro/Day/*
                                 const [objThemeType, objThemeName, objThemeVariant, objThemeConst] = parseThemePath(objectStyle.name);
                                 const altObjectStyleThemePath = `${themeType}/${themeName}/${themeVariant}/${objThemeConst}`;
                                 const altStyle = stylesByName[altObjectStyleThemePath];
@@ -174,10 +178,50 @@ async function main() {
                             } else {
                                 pushError(unknownThemeErrors, object, `Skipping theme <b>${objectStyle.name}</b> for object <b>${object.name}</b>`, 'warning');
                             }
-                        } else if (isPlainColor) {
+                        } else if (isPlainEffect) {
                             pushError(plainColorErrors, object, `Plain <b>effect</b> used for object <b>${object.name}</b>`);
                         }
                     } else if (themeType === 'TextTheme') {
+                        // Пропускаем если объект не предназначен для отрисовки на канвасе
+                        if (!isTextObject(object)) break;
+
+                        var { isPlainText, shouldSkip } = validateTextForColorTheme(object);
+                        if (!shouldSkip) {
+                            const objectStyle = stylesById[object.textStyleId];
+                            
+                            // Бывает отваливаются константы у фигмы, effectStyleId остался у object, но не попал в stylesById, поэтому нужна такая проверка
+                            if (objectStyle === undefined) {
+                                pushError(unknownThemeErrors, object, `Unknown <b>textStyleId</b> for object <b>${object.name}</b>. Probably imported form deleted library`);
+                                continue;
+                            }
+
+                            const isValidThemePath = validateThemePath(objectStyle.name);
+                            if (isValidThemePath) {
+                                // TODO: поправить эту кашу 1
+                                const [, textThemeName, , ] = parseThemePath(expandThemePath(themePath), true);
+                                const [, objThemeName, objThemeVariant, objThemeConst] = parseThemePath(objectStyle.name, true);
+                                // TODO: поправить эту кашу 2
+                                const altObjectStyleThemePath = `${themeType}/${textThemeName.includes('_') ? textThemeName : objThemeName }/${objThemeVariant}/${objThemeConst}`;
+                                const altStyle = stylesByName[altObjectStyleThemePath];
+
+                                if (altStyle === undefined) {
+                                    pushError(unknownThemeErrors, object, `Unknown theme <b>${altObjectStyleThemePath}</b> for object <b>${object.name}</b>`);
+                                } else {
+                                    // Применяем стиль 
+                                    if (themeConst === '*') {
+                                        object.textStyleId = altStyle.id;
+                                    } else if (themeConst === objThemeConst) {
+                                        object.textStyleId = altStyle.id;
+                                    } else {
+                                        pushError(ignoringThemeConstErrors, object, `Unknown theme const <b>${themeCons}</b> for object <b>${object.name}</b>`);
+                                    }
+                                }
+                            } else {
+                                pushError(unknownThemeErrors, object, `Skipping theme <b>${objectStyle.name}</b> for object <b>${object.name}</b>`, 'warning');
+                            }
+                        } else if (isPlainText) {
+                            pushError(plainColorErrors, object, `Plain <b>text style</b> used for object <b>${object.name}</b>`);
+                        }
                     } else {
                         pushError(unknownThemeErrors, object, `Unknown themeType <b>${themeType}</b> for themePath <b>${themePath}</b>`);
                     }
@@ -202,7 +246,13 @@ const validateThemePath = (themePath) => {
     return length === 2 || length === 4;
 }
 
-const expandThemePath = (themePath) => {
+const expandThemePath = (rawThemePath) => {
+    let themePath = rawThemePath;
+
+    const themePathMatch = rawThemePath.match(/\((.+?)\)/);
+    if (themePathMatch != null) themePath = themePathMatch[1];
+    console.log(themePath)
+
     const themePathParts = themePath.split('/').map(elem => elem.trim()).filter(elem => elem !== '');
     const length = themePathParts.length;
     const expandedThemeType = 'ColorTheme,EffectTheme,TextTheme'
@@ -210,6 +260,7 @@ const expandThemePath = (themePath) => {
     // 2 элемента в themePath, например Pro/Day
     if (length == 2) {
         const [themeName, themeVariant] = themePathParts;
+        console.log(`${expandedThemeType}/${themeName}/${themeVariant}/*`)
         return `${expandedThemeType}/${themeName}/${themeVariant}/*`;
     }
     
@@ -218,26 +269,40 @@ const expandThemePath = (themePath) => {
 
     // Раскрываем * для themeTypes
     if (themeTypes === '*') {
-        return `${expandedThemeType}/${themeName}/${themeVariant}/${themeConst}`
+        console.log(`${expandedThemeType}/${themeName}/${themeVariant}/${themeConst}`)
+        return `${expandedThemeType}/${themeName}/${themeVariant}/${themeConst}`;
     }
+
+    console.log(themePath)
     
     // Раскрывать нечего, возвращаем оригинал
     return themePath;
 }
 
-const parseThemePath = (themePath) => {
+const parseThemePath = (themePath, isTextThemePath = false) => {
     const themePathParts = themePath.split('/').map(elem => elem.trim()).filter(elem => elem !== '');
     const [themeTypes, themeName, themeVariant, themeConst] = themePathParts;
     const themeTypesParts = themeTypes.split(',').map(elem => elem.trim()).filter(elem => elem !== '');
-    return [themeTypesParts, themeName, themeVariant, themeConst];
+    const themeNameParts = isTextThemePath ? themeName : themeName.replace(/_.+/, '');
+    return [themeTypesParts, themeNameParts, themeVariant, themeConst];
 }
 
 /******* Object ********/
 
-const isPaintableObject = (object) => 
-    object.fillStyleId !== undefined
-    && object.strokeStyleId !== undefined
-    && object.effectStyleId !== undefined;
+const isPaintableObject = (object) =>
+    object.type === 'FRAME'
+    || object.type === 'COMPONENT_SET'
+    || object.type === 'COMPONENT'
+    || object.type === 'INSTANCE'
+    || object.type === 'TEXT'
+    || object.type === 'RECTANGLE'
+    || object.type === 'ELLIPSE'
+    || object.type === 'VECTOR'
+    || object.type === 'BOOLEAN_OPERATION';
+    // object.fillStyleId !== undefined
+    // && object.strokeStyleId !== undefined
+    // && object.effectStyleId !== undefined;
+
 
 const isTextObject = (object) => 
     isPaintableObject(object)
@@ -287,6 +352,18 @@ const validateEffectForColorTheme = (object) => {
     return result;
 }
 
+const validateTextForColorTheme = (object) => {
+    let result = {isPlainText: false, shouldSkip: false};
+
+    // Есть рандомный effect и нет стиля, возвращаем с ошибкой
+    if (object.textStyleId === '') {
+        result.isPlainEffect = true; 
+        result.shouldSkip = true; 
+    }
+
+    return result;
+}
+
 /******* Storage ********/
 
 const restoreStyles = async () => {
@@ -301,7 +378,7 @@ const restoreStyles = async () => {
         } catch (e) {}
     }
 
-    return [...styles, ...figma.getLocalPaintStyles(), ...figma.getLocalEffectStyles()];
+    return [...styles, ...figma.getLocalPaintStyles(), ...figma.getLocalEffectStyles(), ...figma.getLocalTextStyles()];
 }
 
 const storeStyles = async () => {
@@ -311,11 +388,14 @@ const storeStyles = async () => {
     const effectStyleKeys = figma.getLocalEffectStyles()
         .map(style => style.key);
 
+    const textStyleKeys = figma.getLocalTextStyles()
+        .map(style => style.key);
+
     // Удаляем предыдущие стили
     await figma.clientStorage.setAsync(kStylesStorageKey, null);
 
     await figma
-        .clientStorage.setAsync(kStylesStorageKey, [...paintStyleKeys, ...effectStyleKeys]);
+        .clientStorage.setAsync(kStylesStorageKey, [...paintStyleKeys, ...effectStyleKeys, ...textStyleKeys]);
 }
 
 /******** Debug ********/
