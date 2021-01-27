@@ -2,8 +2,8 @@
   "name": "🌘  Presence",
   "id": "914464061867139176",
   "api": "1.0.0",
-  "main": "code.js",
-  "ui": "ui.html",
+  "main": "src/plugin.js",
+  "ui": "public/index.html",
   "menu": [
     {"name": "Apply theme", "command": "applyTheme"},
     {"separator": true},

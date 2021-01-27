@@ -74,7 +74,7 @@ async function main() {
                         var { isPlainColor, shouldSkip } = validateFillForColorTheme(object);
                         if (!shouldSkip) {
                             const objectStyle = stylesById[object.fillStyleId];
-                            
+
                             // Бывает отваливаются константы у фигмы, fillStyleId остался у object, но не попал в stylesById, поэтому нужна такая проверка
                             if (objectStyle === undefined) {
                                 pushError(unknownThemeErrors, object, `Unknown <b>fillStyleId</b> for object <b>${object.name}</b>. Probably imported form deleted library`);
@@ -112,7 +112,7 @@ async function main() {
                         var { isPlainColor, shouldSkip } = validateStrokeForColorTheme(object);
                         if (!shouldSkip) {
                             const objectStyle = stylesById[object.strokeStyleId];
-                            
+
                             // Бывает отваливаются константы у фигмы, strokeStyleId остался у object, но не попал в stylesById, поэтому нужна такая проверка
                             if (objectStyle === undefined) {
                                 pushError(unknownThemeErrors, object, `Unknown <b>strokeStyleId</b> for object <b>${object.name}</b>. Probably imported form old library`);
@@ -150,7 +150,7 @@ async function main() {
                         var { isPlainEffect, shouldSkip } = validateEffectForColorTheme(object);
                         if (!shouldSkip) {
                             const objectStyle = stylesById[object.effectStyleId];
-                            
+
                             // Бывает отваливаются константы у фигмы, effectStyleId остался у object, но не попал в stylesById, поэтому нужна такая проверка
                             if (objectStyle === undefined) {
                                 pushError(unknownThemeErrors, object, `Unknown <b>effectStyleId</b> for object <b>${object.name}</b>. Probably imported form deleted library`);
@@ -188,7 +188,7 @@ async function main() {
                         var { isPlainText, shouldSkip } = validateTextForColorTheme(object);
                         if (!shouldSkip) {
                             const objectStyle = stylesById[object.textStyleId];
-                            
+
                             // Бывает отваливаются константы у фигмы, effectStyleId остался у object, но не попал в stylesById, поэтому нужна такая проверка
                             if (objectStyle === undefined) {
                                 pushError(unknownThemeErrors, object, `Unknown <b>textStyleId</b> for object <b>${object.name}</b>. Probably imported form deleted library`);
@@ -198,10 +198,10 @@ async function main() {
                             const isValidThemePath = validateThemePath(objectStyle.name);
                             if (isValidThemePath) {
                                 // TODO: поправить эту кашу 1
-                                const [, textThemeName, , ] = parseThemePath(expandThemePath(themePath), true);
+                                const [, textThemeName, ,] = parseThemePath(expandThemePath(themePath), true);
                                 const [, objThemeName, objThemeVariant, objThemeConst] = parseThemePath(objectStyle.name, true);
                                 // TODO: поправить эту кашу 2
-                                const altObjectStyleThemePath = `${themeType}/${textThemeName.includes('_') ? textThemeName : objThemeName }/${objThemeVariant}/${objThemeConst}`;
+                                const altObjectStyleThemePath = `${themeType}/${textThemeName.includes('_') ? textThemeName : objThemeName}/${objThemeVariant}/${objThemeConst}`;
                                 const altStyle = stylesByName[altObjectStyleThemePath];
 
                                 if (altStyle === undefined) {
@@ -263,7 +263,7 @@ const expandThemePath = (rawThemePath) => {
         console.log(`${expandedThemeType}/${themeName}/${themeVariant}/*`)
         return `${expandedThemeType}/${themeName}/${themeVariant}/*`;
     }
-    
+
     // 4 элемента в themePath, например */Pro/Day/*
     const [themeTypes, themeName, themeVariant, themeConst] = themePathParts;
 
@@ -274,7 +274,7 @@ const expandThemePath = (rawThemePath) => {
     }
 
     console.log(themePath)
-    
+
     // Раскрывать нечего, возвращаем оригинал
     return themePath;
 }
@@ -299,38 +299,38 @@ const isPaintableObject = (object) =>
     || object.type === 'ELLIPSE'
     || object.type === 'VECTOR'
     || object.type === 'BOOLEAN_OPERATION';
-    // object.fillStyleId !== undefined
-    // && object.strokeStyleId !== undefined
-    // && object.effectStyleId !== undefined;
+// object.fillStyleId !== undefined
+// && object.strokeStyleId !== undefined
+// && object.effectStyleId !== undefined;
 
 
-const isTextObject = (object) => 
+const isTextObject = (object) =>
     isPaintableObject(object)
     && object.textStyleId !== undefined;
 
 /******* Styles ********/
 
 const validateFillForColorTheme = (object) => {
-    let result = {isPlainColor: false, shouldSkip: false};
+    let result = { isPlainColor: false, shouldSkip: false };
 
     // Есть рандомный fill и нет стиля, возвращаем с ошибкой
     if (object.fills.length > 0 && object.fillStyleId === '') {
-        result.isPlainColor = true; 
-        result.shouldSkip = true; 
+        result.isPlainColor = true;
+        result.shouldSkip = true;
     }
     // У объекта нет fill и нет стиля, пропускаем
     if (object.fills.length === 0 && object.fillStyleId === '') result.shouldSkip = true;
-    
+
     return result;
 }
 
 const validateStrokeForColorTheme = (object) => {
-    let result = {isPlainColor: false, shouldSkip: false};
+    let result = { isPlainColor: false, shouldSkip: false };
 
     // Есть рандомный stroke и нет стиля, возвращаем с ошибкой
     if (object.strokes.length > 0 && object.strokeStyleId === '') {
-        result.isPlainColor = true; 
-        result.shouldSkip = true; 
+        result.isPlainColor = true;
+        result.shouldSkip = true;
     }
     // У объекта нет stroke и нет стиля, пропускаем
     if (object.strokes.length === 0 && object.strokeStyleId === '') result.shouldSkip = true;
@@ -339,12 +339,12 @@ const validateStrokeForColorTheme = (object) => {
 }
 
 const validateEffectForColorTheme = (object) => {
-    let result = {isPlainEffect: false, shouldSkip: false};
+    let result = { isPlainEffect: false, shouldSkip: false };
 
     // Есть рандомный effect и нет стиля, возвращаем с ошибкой
     if (object.effects.length > 0 && object.effectStyleId === '') {
-        result.isPlainEffect = true; 
-        result.shouldSkip = true; 
+        result.isPlainEffect = true;
+        result.shouldSkip = true;
     }
     // У объекта нет stroke и нет стиля, пропускаем
     if (object.effects.length === 0 && object.effectStyleId === '') result.shouldSkip = true;
@@ -353,12 +353,12 @@ const validateEffectForColorTheme = (object) => {
 }
 
 const validateTextForColorTheme = (object) => {
-    let result = {isPlainText: false, shouldSkip: false};
+    let result = { isPlainText: false, shouldSkip: false };
 
     // Есть рандомный effect и нет стиля, возвращаем с ошибкой
     if (object.textStyleId === '') {
-        result.isPlainEffect = true; 
-        result.shouldSkip = true; 
+        result.isPlainEffect = true;
+        result.shouldSkip = true;
     }
 
     return result;
@@ -375,7 +375,7 @@ const restoreStyles = async () => {
         try {
             const style = await figma.importStyleByKeyAsync(styleKey);
             styles.push(style);
-        } catch (e) {}
+        } catch (e) { }
     }
 
     return [...styles, ...figma.getLocalPaintStyles(), ...figma.getLocalEffectStyles(), ...figma.getLocalTextStyles()];
@@ -401,7 +401,7 @@ const storeStyles = async () => {
 /******** Debug ********/
 
 const pushError = (errors, object, descr, type = 'error') => {
-    errors.push({object: object, descr: descr, type: type});
+    errors.push({ object: object, descr: descr, type: type });
 }
 
 main();
